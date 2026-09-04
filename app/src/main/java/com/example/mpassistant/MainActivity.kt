@@ -113,6 +113,7 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView, url: String) {
                 swipeRefresh.isRefreshing = false
                 cookieManager.flush()
+                injectViewportFix(view)
             }
         }
 
@@ -142,6 +143,59 @@ class MainActivity : AppCompatActivity() {
         swipeRefresh.setOnRefreshListener {
             webView.reload()
         }
+    }
+
+    // 桌面版页面本身没有为触屏做适配,而且很多现代网页会自己拦截touch事件用于内部滚动,
+    // 导致WebView原生的双指缩放/拖动手势被吞掉,滑不动也缩不了。
+    // 这里在页面加载完之后动态插入一个viewport声明,把整页按屏幕宽度算出的比例缩小显示,
+    // 同时强制声明 touch-action,明确告诉浏览器"缩放和滑动这两个手势必须放行",
+    // 这样WebView原生的缩放/滚动手势才能正常生效。
+    private fun injectViewportFix(view: WebView) {
+        val js = """
+            (function(){
+                try {
+                    var meta = document.querySelector('meta[name=viewport]');
+                    if (!meta) {
+                        meta = document.createElement('meta');
+                        meta.name = 'viewport';
+                        document.head.appendChild(meta);
+                    }
+                    function fitScale(){
+                        var w = Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0);
+                        if (!w) return;
+                        var scale = window.innerWidth / w;
+                        if (scale > 1) scale = 1;
+                        meta.setAttribute('content', 'width=' + w + ', initial-scale=' + scale + ', minimum-scale=0.1, maximum-scale=5, user-scalable=yes');
+                    }
+                    fitScale();
+                    window.addEventListener('resize', fitScale);
+
+                    var fitTimer = null;
+                    function debouncedFit(){
+                        if (fitTimer) clearTimeout(fitTimer);
+                        fitTimer = setTimeout(fitScale, 300);
+                    }
+                    if (window.MutationObserver && document.body) {
+                        var mo = new MutationObserver(debouncedFit);
+                        mo.observe(document.body, { childList: true, subtree: true, attributes: true });
+                    }
+                    // SPA异步渲染内容,首次计算时页面可能还没撑开,过一会再校正一次
+                    setTimeout(fitScale, 800);
+                    setTimeout(fitScale, 2000);
+
+                    var style = document.getElementById('__mpassistant_touch_fix__');
+                    if (!style) {
+                        style = document.createElement('style');
+                        style.id = '__mpassistant_touch_fix__';
+                        document.head.appendChild(style);
+                    }
+                    style.innerHTML = 'html, body { touch-action: pan-x pan-y pinch-zoom !important; }';
+                } catch (e) {
+                    console.error('viewport fix failed', e);
+                }
+            })();
+        """.trimIndent()
+        view.evaluateJavascript(js, null)
     }
 
     @Deprecated("Deprecated in Java")
