@@ -4,11 +4,15 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.webkit.JavascriptInterface
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.webkit.WebViewAssetLoader
 import org.json.JSONObject
 
 class MarkdownActivity : AppCompatActivity() {
@@ -30,14 +34,26 @@ class MarkdownActivity : AppCompatActivity() {
         webView = findViewById(R.id.markdownWebView)
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
-        // 渲染页面需要用 fetch() 读取 assets/templates/ 下的模板JSON文件,
-        // 这几个开关只影响这一个WebView(它只加载打包进APP的本地资源,不加载任何远程页面),
-        // 所以放开本地文件互访是安全的。
-        webView.settings.allowFileAccess = true
-        webView.settings.allowFileAccessFromFileURLs = true
-        webView.settings.allowUniversalAccessFromFileURLs = true
         webView.addJavascriptInterface(JsBridge(), "AndroidBridge")
-        webView.loadUrl("file:///android_asset/markdown_preview.html")
+
+        // file:// 页面里用 fetch() 读取本地资源经常被同源策略拦截(不同机型/系统版本表现不一致)。
+        // 用 WebViewAssetLoader 把 assets 目录伪装成一个虚拟的 https:// 域名提供给 WebView,
+        // fetch('templates/xxx.json') 这类相对路径请求就会被下面的 shouldInterceptRequest 拦截并
+        // 直接从本地 assets 里读取返回,行为和真正的网络请求一致,不再受 file 协议限制。
+        val assetLoader = WebViewAssetLoader.Builder()
+            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .build()
+
+        webView.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(
+                view: WebView,
+                request: WebResourceRequest
+            ): WebResourceResponse? {
+                return assetLoader.shouldInterceptRequest(request.url)
+            }
+        }
+
+        webView.loadUrl("https://appassets.androidplatform.net/assets/markdown_preview.html")
 
         findViewById<Button>(R.id.btnOpenFile).setOnClickListener {
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
