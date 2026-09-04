@@ -59,6 +59,68 @@ var FALLBACK_STYLE_MAP = {
   IMG: 'max-width:100%;'
 };
 
+// 微信公众号编辑器粘贴时对HTML做净化处理,只认识 p/span/section/a/img/strong/em/code 这几个
+// 它自己内部编辑器也在用的标签,遇到 h1~h6/blockquote/pre/ul/ol 这类语义化标签经常会整段丢样式、
+// 甚至替换成没有格式的纯文本段落。这里在"复制"这一步,把预览区克隆一份,统一拍平转换成
+// <section> 标签(列表项手动补上符号/序号,代码块保留手动换行),预览区本身保持不变方便阅读编辑。
+var WECHAT_SAFE_TAGS = ['P', 'SPAN', 'A', 'IMG', 'STRONG', 'EM', 'B', 'I', 'BR', 'CODE',
+  'TABLE', 'THEAD', 'TBODY', 'TR', 'TD', 'TH'];
+
+function renameToSection(el) {
+  var section = document.createElement('section');
+  for (var i = 0; i < el.attributes.length; i++) {
+    var attr = el.attributes[i];
+    section.setAttribute(attr.name, attr.value);
+  }
+  while (el.firstChild) {
+    section.appendChild(el.firstChild);
+  }
+  el.parentNode.replaceChild(section, el);
+  return section;
+}
+
+function elementDepth(el) {
+  var d = 0;
+  while (el.parentElement) { d++; el = el.parentElement; }
+  return d;
+}
+
+function flattenForWeChatPaste(root) {
+  // 代码块:去掉 <pre><code> 结构,换成保留手动换行的纯文本,PRE本身后面会被转成section
+  root.querySelectorAll('pre').forEach(function (pre) {
+    var codeEl = pre.querySelector('code');
+    var text = codeEl ? codeEl.textContent : pre.textContent;
+    pre.textContent = text;
+    var existingStyle = pre.getAttribute('style') || '';
+    pre.setAttribute('style', existingStyle + 'white-space:pre-wrap;word-break:break-all;');
+  });
+
+  // 列表:给每个 li 手动加上项目符号或序号,之后 ul/ol/li 会统一被转成section
+  root.querySelectorAll('ul, ol').forEach(function (listEl) {
+    var isOrdered = listEl.tagName === 'OL';
+    var idx = 1;
+    Array.prototype.forEach.call(listEl.children, function (li) {
+      if (li.tagName !== 'LI') return;
+      var marker = isOrdered ? (idx + '. ') : '• ';
+      idx++;
+      li.insertBefore(document.createTextNode(marker), li.firstChild);
+    });
+  });
+
+  // 其余非白名单标签(h1~h6、blockquote、pre、ul、ol、li、hr等)统一转成 section,
+  // 从最深层开始转换,避免中途破坏父子关系
+  var toConvert = [];
+  root.querySelectorAll('*').forEach(function (el) {
+    if (WECHAT_SAFE_TAGS.indexOf(el.tagName) === -1) {
+      toConvert.push(el);
+    }
+  });
+  toConvert.sort(function (a, b) { return elementDepth(b) - elementDepth(a); });
+  toConvert.forEach(function (el) {
+    if (el.parentNode) renameToSection(el);
+  });
+}
+
 document.getElementById('btnEdit').onclick = function () {
   editWrap.style.display = 'block';
   previewWrap.style.display = 'none';
@@ -143,8 +205,19 @@ document.getElementById('btnRender').onclick = function () {
 };
 
 document.getElementById('btnCopy').onclick = function () {
+  // 克隆一份预览内容,拍平成微信编辑器认得的结构,放在屏幕外(不影响可见预览)
+  var clone = rendered.cloneNode(true);
+  flattenForWeChatPaste(clone);
+
+  var hiddenHost = document.createElement('div');
+  hiddenHost.style.position = 'fixed';
+  hiddenHost.style.left = '-9999px';
+  hiddenHost.style.top = '0';
+  hiddenHost.appendChild(clone);
+  document.body.appendChild(hiddenHost);
+
   var range = document.createRange();
-  range.selectNodeContents(rendered);
+  range.selectNodeContents(clone);
   var sel = window.getSelection();
   sel.removeAllRanges();
   sel.addRange(range);
@@ -155,6 +228,7 @@ document.getElementById('btnCopy').onclick = function () {
     if (window.AndroidBridge) window.AndroidBridge.onCopyFail(e.message);
   }
   sel.removeAllRanges();
+  document.body.removeChild(hiddenHost);
 };
 
 // 供原生代码调用:传入markdown文本并直接触发渲染
