@@ -1,0 +1,18 @@
+{
+  "H1": "font-size:22px;font-weight:bold;color:#2d2d2d;margin:24px 0 12px;line-height:1.4;font-family:Menlo,Consolas,monospace;",
+  "H2": "font-size:19px;font-weight:bold;color:#6f42c1;margin:22px 0 10px;line-height:1.4;border-bottom:2px solid #6f42c1;padding-bottom:4px;",
+  "H3": "font-size:17px;font-weight:bold;color:#6f42c1;margin:18px 0 8px;line-height:1.4;",
+  "P": "font-size:15px;color:#3a3a3a;line-height:1.8;margin:8px 0;",
+  "LI": "font-size:15px;color:#3a3a3a;line-height:1.8;margin:4px 0;",
+  "A": "color:#6f42c1;text-decoration:underline;",
+  "STRONG": "font-weight:bold;color:#6f42c1;",
+  "EM": "font-style:italic;color:#555;",
+  "BLOCKQUOTE": "border-left:4px solid #6f42c1;color:#666;padding:8px 16px;margin:12px 0;background:#f6f2fb;font-style:italic;",
+  "CODE": "font-family:Menlo,Consolas,monospace;background:#f0eaf7;color:#6f42c1;padding:2px 6px;border-radius:3px;font-size:13px;",
+  "PRE": "background:#1e1e2e;color:#cdd6f4;padding:14px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.6;margin:14px 0;",
+  "IMG": "max-width:100%;display:block;margin:14px auto;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);",
+  "HR": "border:none;border-top:2px dashed #6f42c1;margin:24px 0;",
+  "TABLE": "border-collapse:collapse;width:100%;margin:14px 0;font-size:13px;",
+  "TH": "border:1px solid #d9c9ec;padding:8px 10px;background:#f6f2fb;color:#6f42c1;",
+  "TD": "border:1px solid #eee2f5;padding:8px 10px;"
+}
