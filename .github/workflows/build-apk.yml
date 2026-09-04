@@ -9,6 +9,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      apk_name: ${{ steps.find_apk.outputs.apk_name }}
+      apk_path: ${{ steps.find_apk.outputs.apk_path }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -50,7 +53,7 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    if: github.event_name == 'push' && contains(fromJson('["main", "master"]'), github.ref_name)
     steps:
       - name: Download APK artifact
         uses: actions/download-artifact@v4
@@ -71,8 +74,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref_name }}
-          release_name: ${{ github.ref_name }}
+          tag_name: release-${{ github.run_id }}
+          release_name: Release ${{ github.run_id }}
           body: "Automated release for ${{ github.ref_name }}"
           draft: false
           prerelease: false
