@@ -1,6 +1,6 @@
-name: Build APK
+name: Build APK and Create Release (auto-tag)
 
-# Give GITHUB_TOKEN permission to create releases and upload assets
+# 允许 GITHUB_TOKEN 创建 tag 和 release、上传资产
 permissions:
   contents: write
   packages: write
@@ -9,12 +9,13 @@ permissions:
 on:
   push:
     branches: [ main, master ]
-    tags: [ 'v*' ]
   workflow_dispatch: {}
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      apk-path: ${{ steps.find_apk.outputs.apk_path }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -29,7 +30,6 @@ jobs:
         uses: android-actions/setup-android@v3
 
       # 项目里没有带 gradlew 二进制 wrapper 文件,这个 action 会在 CI 里直接安装
-      # 指定版本的 Gradle 并加入 PATH,后面直接用 `gradle` 命令即可,不需要 wrapper
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -50,13 +50,16 @@ jobs:
         run: |
           set -e
           APK=$(ls app/build/outputs/apk/debug/*.apk | head -n 1)
-          echo "apk_name=$(basename \"$APK\")" >> $GITHUB_OUTPUT
           echo "apk_path=$APK" >> $GITHUB_OUTPUT
 
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    # 仅在 push 到 main 或 master 时自动运行
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    env:
+      # 自动 tag 名称（无需你手动创建）
+      AUTO_TAG: auto-release-${{ github.run_number }}-${{ github.sha }}
     steps:
       - name: Download APK artifact
         uses: actions/download-artifact@v4
@@ -65,11 +68,38 @@ jobs:
           path: ./artifact
 
       - name: Find downloaded APK
-        id: find_apk
+        id: find_downloaded_apk
         run: |
           set -e
           APK=$(ls ./artifact/*.apk | head -n 1)
           echo "apk=$APK" >> $GITHUB_OUTPUT
+
+      - name: Create tag (if not exists)
+        uses: actions/github-script@v6
+        env:
+          TAG_NAME: ${{ env.AUTO_TAG }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const tag = process.env.TAG_NAME;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const sha = process.env.GITHUB_SHA;
+            try {
+              // 检查 tag 是否已存在
+              await github.rest.git.getRef({ owner, repo, ref: `tags/${tag}` });
+              core.info(`Tag ${tag} already exists.`);
+            } catch (err) {
+              // 如果不存在则创建 lightweight tag（refs/tags/<tag> 指向当前 commit）
+              await github.rest.git.createRef({
+                owner,
+                repo,
+                ref: `refs/tags/${tag}`,
+                sha
+              });
+              core.info(`Created tag ${tag} -> ${sha}`);
+            }
+            core.setOutput('tag', tag);
 
       - name: Create Release
         id: create_release
@@ -77,9 +107,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref_name }}
-          release_name: ${{ github.ref_name }}
-          body: "Automated release for ${{ github.ref_name }}"
+          tag_name: ${{ env.AUTO_TAG }}
+          release_name: ${{ env.AUTO_TAG }}
+          body: "Automated release from branch ${{ github.ref_name }} (run ${{ github.run_number }})"
           draft: false
           prerelease: false
 
@@ -89,6 +119,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ${{ steps.find_apk.outputs.apk }}
+          asset_path: ${{ steps.find_downloaded_apk.outputs.apk }}
           asset_name: MPAssistant-debug.apk
           asset_content_type: application/vnd.android.package-archive
