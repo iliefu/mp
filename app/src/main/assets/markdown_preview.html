@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  html,body{margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;}
+  #toolbar{position:sticky;top:0;background:#fff;padding:8px 8px 0;box-shadow:0 1px 3px rgba(0,0,0,.1);z-index:10;}
+  #toolbar select{width:100%;padding:8px;border-radius:6px;border:1px solid #ddd;font-size:14px;margin-bottom:8px;}
+  #toolbar2{display:flex;gap:8px;background:#fff;padding:0 8px 8px;box-shadow:0 1px 3px rgba(0,0,0,.1);}
+  #toolbar2 button{flex:1;padding:10px 0;border:none;border-radius:6px;background:#07c160;color:#fff;font-size:14px;}
+  #toolbar2 button.secondary{background:#576b95;}
+  #editWrap{padding:12px;}
+  #mdInput{width:100%;box-sizing:border-box;height:40vh;font-size:14px;padding:8px;border:1px solid #ddd;border-radius:6px;}
+  #previewWrap{padding:12px;display:none;}
+  #rendered{background:#fff;padding:16px;border-radius:6px;}
+  #rendered img{max-width:100%;}
+  #tip{font-size:12px;color:#999;padding:0 12px;}
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <select id="templateSelect"></select>
+</div>
+<div id="toolbar2">
+  <button id="btnEdit" class="secondary">编辑</button>
+  <button id="btnRender">预览排版</button>
+  <button id="btnCopy">复制富文本</button>
+</div>
+<div id="tip">提示:复制后切到"返回公众号编辑器",长按粘贴即可保留格式</div>
+<div id="editWrap">
+  <textarea id="mdInput" placeholder="在此粘贴或输入Markdown内容,也可以用上方按钮打开.md文件..."></textarea>
+</div>
+<div id="previewWrap">
+  <div id="rendered" contenteditable="true"></div>
+</div>
+
+<script>
+var editWrap = document.getElementById('editWrap');
+var previewWrap = document.getElementById('previewWrap');
+var mdInput = document.getElementById('mdInput');
+var rendered = document.getElementById('rendered');
+var templateSelect = document.getElementById('templateSelect');
+var currentStyleMap = {};
+
+document.getElementById('btnEdit').onclick = function () {
+  editWrap.style.display = 'block';
+  previewWrap.style.display = 'none';
+};
+
+// 微信公众号编辑器粘贴时会剥离 <style> 标签和 class,只认标签自带的 style="" 内联样式,
+// 所以这里把当前选中模板里每种标签的样式直接写进 style 属性。
+// 模板本身来自 templates/*.json,新增模板不需要改这里的代码。
+function applyInlineStyle(root) {
+  root.querySelectorAll('*').forEach(function (el) {
+    var tag = el.tagName;
+    if (tag === 'PRE') {
+      var codeEl = el.querySelector('code');
+      if (codeEl) codeEl.setAttribute('style', 'background:none;color:inherit;padding:0;');
+    }
+    if (currentStyleMap[tag]) {
+      var existing = el.getAttribute('style') || '';
+      el.setAttribute('style', existing + currentStyleMap[tag]);
+    }
+  });
+}
+
+// 加载 templates/manifest.json,填充下拉框,并加载默认(或上次选择的)模板
+function loadManifestAndTemplates() {
+  fetch('templates/manifest.json')
+    .then(function (res) { return res.json(); })
+    .then(function (list) {
+      templateSelect.innerHTML = '';
+      list.forEach(function (t) {
+        var opt = document.createElement('option');
+        opt.value = t.id;
+        opt.textContent = t.name;
+        templateSelect.appendChild(opt);
+      });
+      var saved = null;
+      try { saved = localStorage.getItem('wemd_template'); } catch (e) {}
+      if (saved && list.some(function (t) { return t.id === saved; })) {
+        templateSelect.value = saved;
+      }
+      return loadTemplate(templateSelect.value);
+    })
+    .catch(function (err) {
+      console.error('模板列表加载失败', err);
+    });
+}
+
+function loadTemplate(id) {
+  return fetch('templates/' + id + '.json')
+    .then(function (res) { return res.json(); })
+    .then(function (map) {
+      currentStyleMap = map;
+      try { localStorage.setItem('wemd_template', id); } catch (e) {}
+    })
+    .catch(function (err) {
+      console.error('模板加载失败: ' + id, err);
+    });
+}
+
+templateSelect.onchange = function () {
+  loadTemplate(templateSelect.value).then(function () {
+    // 已经在预览状态时,切换模板自动重新套用样式
+    if (previewWrap.style.display !== 'none' && mdInput.value) {
+      document.getElementById('btnRender').click();
+    }
+  });
+};
+
+loadManifestAndTemplates();
+
+document.getElementById('btnRender').onclick = function () {
+  var html = (typeof marked !== 'undefined') ? marked.parse(mdInput.value || '') : '<p>marked.js 加载失败,请检查网络连接</p>';
+  rendered.innerHTML = html;
+  applyInlineStyle(rendered);
+  editWrap.style.display = 'none';
+  previewWrap.style.display = 'block';
+};
+
+document.getElementById('btnCopy').onclick = function () {
+  var range = document.createRange();
+  range.selectNodeContents(rendered);
+  var sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  try {
+    document.execCommand('copy');
+    if (window.AndroidBridge) window.AndroidBridge.onCopyDone();
+  } catch (e) {
+    if (window.AndroidBridge) window.AndroidBridge.onCopyFail(e.message);
+  }
+  sel.removeAllRanges();
+};
+
+// 供原生代码调用:传入markdown文本并直接触发渲染
+function setMarkdownAndRender(text) {
+  mdInput.value = text;
+  document.getElementById('btnRender').click();
+}
+</script>
+</body>
+</html>
