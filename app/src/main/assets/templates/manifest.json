@@ -1,4 +1,5 @@
 [
   { "id": "default", "name": "默认清爽绿" },
-  { "id": "geek-purple", "name": "极客紫" }
+  { "id": "geek-purple", "name": "极客紫" },
+  { "id": "wemd_blue", "name": "WeMD经典蓝" }
 ]
