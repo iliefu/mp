@@ -140,6 +140,17 @@ function applyInlineStyle(root) {
       var existing = el.getAttribute('style') || '';
       el.setAttribute('style', existing + currentStyleMap[tag]);
     }
+    // 支持形如 "BLOCKQUOTE P" 这种两级父子选择器,用来覆盖嵌套元素的默认样式
+    // (比如引用块内部的段落文字颜色/字号要跟普通段落不一样)。放在tag样式之后追加,
+    // 同一个style属性里后写的同名CSS属性会覆盖前面的,所以能正确覆盖。
+    var parentTag = el.parentElement ? el.parentElement.tagName : null;
+    if (parentTag) {
+      var compoundKey = parentTag + ' ' + tag;
+      if (currentStyleMap[compoundKey]) {
+        var existing2 = el.getAttribute('style') || '';
+        el.setAttribute('style', existing2 + currentStyleMap[compoundKey]);
+      }
+    }
   });
 }
 
