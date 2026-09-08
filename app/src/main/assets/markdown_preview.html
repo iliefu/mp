@@ -136,6 +136,11 @@ function applyInlineStyle(root) {
       var codeEl = el.querySelector('code');
       if (codeEl) codeEl.setAttribute('style', 'background:none;color:inherit;padding:0;');
     }
+    // 行内代码的样式不应该套到代码块(pre>code)里,代码块整体外观由PRE自己的样式控制,
+    // 不然代码块背景/文字色会被行内code样式覆盖掉。
+    if (tag === 'CODE' && el.parentElement && el.parentElement.tagName === 'PRE') {
+      return;
+    }
     if (currentStyleMap[tag]) {
       var existing = el.getAttribute('style') || '';
       el.setAttribute('style', existing + currentStyleMap[tag]);
