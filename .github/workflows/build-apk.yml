@@ -28,6 +28,9 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platform-tools
 
       # 项目里没有带 gradlew 二进制 wrapper 文件,这个 action 会在 CI 里直接安装
       - name: Setup Gradle
