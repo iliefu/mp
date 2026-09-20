@@ -17,6 +17,9 @@
   #rendered{background:#fff;padding:16px;border-radius:6px;}
   #rendered img{max-width:100%;}
   #tip{font-size:12px;color:#999;padding:0 12px;}
+  #shortcodeHelp{margin:8px 12px;font-size:12px;color:#555;}
+  #shortcodeHelp summary{cursor:pointer;color:#576b95;font-size:13px;}
+  #shortcodeHelp pre{background:#f5f5f5;padding:8px;border-radius:6px;overflow-x:auto;font-size:11px;line-height:1.6;white-space:pre-wrap;word-break:break-all;}
 </style>
 </head>
 <body>
@@ -29,6 +32,37 @@
   <button id="btnCopy">复制富文本</button>
 </div>
 <div id="tip">提示:复制后切到"返回公众号编辑器",长按粘贴即可保留格式</div>
+<details id="shortcodeHelp">
+  <summary>编辑部风格特殊模块语法(点开看用法)</summary>
+  <pre>:::note
+大标题文字
+摘要正文，**关键词**会变橙色加粗，==关键词==会带青色虚线下划线
+:::
+
+:::bar
+黑底白字通栏提示条文字
+:::
+
+:::cards
+01: 第一个看点
+02: 第二个看点
+03: 第三个看点
+:::
+
+:::h
+01
+小节标题文字
+:::
+
+:::end
+写在最后
+结尾正文，支持**加粗**
+:::
+
+:::footer
+END NOTE | 保持观察
+:::</pre>
+</details>
 <div id="editWrap">
   <textarea id="mdInput" placeholder="在此粘贴或输入Markdown内容,也可以用上方按钮打开.md文件..."></textarea>
 </div>
@@ -59,12 +93,113 @@ var FALLBACK_STYLE_MAP = {
   IMG: 'max-width:100%;'
 };
 
+// ============================================================
+// 编辑部风格特殊模块:::name ... ::: 简写语法预处理
+// 这些模块(三卡片预览行、黑底提示条、带编号小节标题等)不是Markdown原生语法能表达的
+// 结构,所以在交给marked.js解析之前先把 :::xxx ... ::: 整块摘出来,直接生成固定样式的
+// HTML片段,渲染时再用占位符换回去,不走marked的markdown解析。
+// ============================================================
+function mdInline(text) {
+  var escaped = (text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  escaped = escaped.replace(/\*\*(.+?)\*\*/g, '<span style="color:#E67E3C;font-weight:bold;">$1</span>');
+  escaped = escaped.replace(/==(.+?)==/g, '<span style="border-bottom:1px dotted #3B9B94;color:#1A1A1A;">$1</span>');
+  escaped = escaped.replace(/\n/g, '<br>');
+  return escaped;
+}
+
+function buildShortcodeBlock(name, content) {
+  var lines = content.split('\n');
+  if (name === 'note') {
+    var title = lines[0] || '';
+    var summary = lines.slice(1).join('\n');
+    return '<section style="background:#FAF8F3;border:1px solid #E5E0D8;border-radius:4px;padding:24px 20px;margin:0 0 20px;">' +
+      '<section style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">' +
+      '<span style="width:6px;height:6px;border-radius:50%;background:#1A1A1A;display:inline-block;"></span>' +
+      '<span style="font-size:12px;letter-spacing:3px;color:#1A1A1A;font-weight:bold;">EDITORIAL NOTE</span>' +
+      '<span style="flex:1;height:1px;background:#D8D2C5;"></span>' +
+      '</section>' +
+      '<p style="font-size:24px;font-weight:900;color:#1A1A1A;line-height:1.4;margin:0 0 16px;">' + mdInline(title) + '</p>' +
+      '<p style="font-size:15px;color:#3A3A3A;line-height:1.8;margin:0;">' + mdInline(summary) + '</p>' +
+      '</section>';
+  }
+  if (name === 'bar') {
+    return '<section style="background:#1A1A1A;color:#fff;font-size:15px;font-weight:bold;padding:14px 20px;border-radius:2px;margin:20px 0;">' + mdInline(content) + '</section>';
+  }
+  if (name === 'cards') {
+    var items = lines.filter(function (l) { return l.trim(); }).map(function (l) {
+      var idx = l.indexOf(':');
+      var num = idx > -1 ? l.slice(0, idx).trim() : '';
+      var text = idx > -1 ? l.slice(idx + 1).trim() : l.trim();
+      return '<section style="flex:1;background:#F2F0EA;border-radius:4px;padding:12px 10px;">' +
+        '<p style="font-size:12px;color:#E67E3C;font-weight:bold;margin:0 0 6px;">' + num + '</p>' +
+        '<p style="font-size:13px;color:#1A1A1A;line-height:1.4;margin:0;">' + mdInline(text) + '</p>' +
+        '</section>';
+    }).join('');
+    return '<section style="margin:20px 0;">' +
+      '<p style="font-size:14px;color:#888;margin:0 0 10px;">本文看点</p>' +
+      '<section style="display:flex;gap:8px;">' + items + '</section>' +
+      '</section>';
+  }
+  if (name === 'h') {
+    var num = lines[0] || '';
+    var htitle = lines.slice(1).join(' ');
+    return '<section style="display:flex;align-items:baseline;gap:12px;margin:32px 0 4px;">' +
+      '<span style="font-size:26px;font-weight:900;color:#1A1A1A;">' + num + '</span>' +
+      '<span style="font-size:19px;font-weight:bold;color:#1A1A1A;">' + mdInline(htitle) + '</span>' +
+      '</section>' +
+      '<p style="font-size:11px;letter-spacing:2px;color:#B0B0B0;margin:0 0 16px;">KEY INSIGHT</p>';
+  }
+  if (name === 'end') {
+    var heading = lines[0] || '写在最后';
+    var body = lines.slice(1).join('\n');
+    return '<section style="background:#1A1A1A;color:#fff;border-radius:4px;padding:24px 20px;margin:24px 0;">' +
+      '<p style="font-size:16px;font-weight:bold;color:#fff;margin:0 0 12px;">' + mdInline(heading) + '</p>' +
+      '<p style="font-size:15px;color:#E0E0E0;line-height:1.8;margin:0;">' + mdInline(body) + '</p>' +
+      '</section>';
+  }
+  if (name === 'footer') {
+    var parts = content.split('|');
+    var left = (parts[0] || '').trim();
+    var right = (parts[1] || '').trim();
+    return '<section style="background:#1A1A1A;color:#fff;display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-radius:2px;margin:16px 0;">' +
+      '<span style="font-size:13px;letter-spacing:2px;">' + mdInline(left) + '</span>' +
+      '<span style="font-size:13px;color:#ccc;">' + mdInline(right) + '</span>' +
+      '</section>';
+  }
+  return '<section style="padding:12px;background:#fee;color:#900;border-radius:4px;">未知模块类型: ' + name + '</section>';
+}
+
+function preprocessShortcodes(md) {
+  var blocks = [];
+  var re = /:::(\w+)\n([\s\S]*?)\n:::/g;
+  var replaced = md.replace(re, function (match, name, content) {
+    var html = buildShortcodeBlock(name, content.trim());
+    var idx = blocks.length;
+    blocks.push(html);
+    return '\n\n@@WEMD_BLOCK_' + idx + '@@\n\n';
+  });
+  return { text: replaced, blocks: blocks };
+}
+
+function injectShortcodeBlocks(html, blocks) {
+  blocks.forEach(function (blockHtml, idx) {
+    var token = '@@WEMD_BLOCK_' + idx + '@@';
+    var wrapped = new RegExp('<p>\\s*' + token + '\\s*</p>', 'i');
+    if (wrapped.test(html)) {
+      html = html.replace(wrapped, blockHtml);
+    } else {
+      html = html.split(token).join(blockHtml);
+    }
+  });
+  return html;
+}
+
 // 微信公众号编辑器粘贴时对HTML做净化处理,只认识 p/span/section/a/img/strong/em/code 这几个
 // 它自己内部编辑器也在用的标签,遇到 h1~h6/blockquote/pre/ul/ol 这类语义化标签经常会整段丢样式、
 // 甚至替换成没有格式的纯文本段落。这里在"复制"这一步,把预览区克隆一份,统一拍平转换成
 // <section> 标签(列表项手动补上符号/序号,代码块保留手动换行),预览区本身保持不变方便阅读编辑。
 var WECHAT_SAFE_TAGS = ['P', 'SPAN', 'A', 'IMG', 'STRONG', 'EM', 'B', 'I', 'BR', 'CODE',
-  'TABLE', 'THEAD', 'TBODY', 'TR', 'TD', 'TH'];
+  'TABLE', 'THEAD', 'TBODY', 'TR', 'TD', 'TH', 'SECTION'];
 
 function renameToSection(el) {
   var section = document.createElement('section');
@@ -86,7 +221,6 @@ function elementDepth(el) {
 }
 
 function flattenForWeChatPaste(root) {
-  // 代码块:去掉 <pre><code> 结构,换成保留手动换行的纯文本,PRE本身后面会被转成section
   root.querySelectorAll('pre').forEach(function (pre) {
     var codeEl = pre.querySelector('code');
     var text = codeEl ? codeEl.textContent : pre.textContent;
@@ -95,7 +229,6 @@ function flattenForWeChatPaste(root) {
     pre.setAttribute('style', existingStyle + 'white-space:pre-wrap;word-break:break-all;');
   });
 
-  // 列表:给每个 li 手动加上项目符号或序号,之后 ul/ol/li 会统一被转成section
   root.querySelectorAll('ul, ol').forEach(function (listEl) {
     var isOrdered = listEl.tagName === 'OL';
     var idx = 1;
@@ -107,8 +240,6 @@ function flattenForWeChatPaste(root) {
     });
   });
 
-  // 其余非白名单标签(h1~h6、blockquote、pre、ul、ol、li、hr等)统一转成 section,
-  // 从最深层开始转换,避免中途破坏父子关系
   var toConvert = [];
   root.querySelectorAll('*').forEach(function (el) {
     if (WECHAT_SAFE_TAGS.indexOf(el.tagName) === -1) {
@@ -126,9 +257,6 @@ document.getElementById('btnEdit').onclick = function () {
   previewWrap.style.display = 'none';
 };
 
-// 微信公众号编辑器粘贴时会剥离 <style> 标签和 class,只认标签自带的 style="" 内联样式,
-// 所以这里把当前选中模板里每种标签的样式直接写进 style 属性。
-// 模板本身来自 templates/*.json,新增模板不需要改这里的代码。
 function applyInlineStyle(root) {
   root.querySelectorAll('*').forEach(function (el) {
     var tag = el.tagName;
@@ -136,8 +264,6 @@ function applyInlineStyle(root) {
       var codeEl = el.querySelector('code');
       if (codeEl) codeEl.setAttribute('style', 'background:none;color:inherit;padding:0;');
     }
-    // 行内代码的样式不应该套到代码块(pre>code)里,代码块整体外观由PRE自己的样式控制,
-    // 不然代码块背景/文字色会被行内code样式覆盖掉。
     if (tag === 'CODE' && el.parentElement && el.parentElement.tagName === 'PRE') {
       return;
     }
@@ -145,9 +271,6 @@ function applyInlineStyle(root) {
       var existing = el.getAttribute('style') || '';
       el.setAttribute('style', existing + currentStyleMap[tag]);
     }
-    // 支持形如 "BLOCKQUOTE P" 这种两级父子选择器,用来覆盖嵌套元素的默认样式
-    // (比如引用块内部的段落文字颜色/字号要跟普通段落不一样)。放在tag样式之后追加,
-    // 同一个style属性里后写的同名CSS属性会覆盖前面的,所以能正确覆盖。
     var parentTag = el.parentElement ? el.parentElement.tagName : null;
     if (parentTag) {
       var compoundKey = parentTag + ' ' + tag;
@@ -159,7 +282,6 @@ function applyInlineStyle(root) {
   });
 }
 
-// 加载 templates/manifest.json,填充下拉框,并加载默认(或上次选择的)模板
 function loadManifestAndTemplates() {
   fetch('templates/manifest.json')
     .then(function (res) { return res.json(); })
@@ -203,7 +325,6 @@ function loadTemplate(id) {
 
 templateSelect.onchange = function () {
   loadTemplate(templateSelect.value).then(function () {
-    // 已经在预览状态时,切换模板自动重新套用样式
     if (previewWrap.style.display !== 'none' && mdInput.value) {
       document.getElementById('btnRender').click();
     }
@@ -213,7 +334,10 @@ templateSelect.onchange = function () {
 loadManifestAndTemplates();
 
 document.getElementById('btnRender').onclick = function () {
-  var html = (typeof marked !== 'undefined') ? marked.parse(mdInput.value || '') : '<p>marked.js 加载失败,请检查网络连接</p>';
+  var raw = mdInput.value || '';
+  var pre = preprocessShortcodes(raw);
+  var html = (typeof marked !== 'undefined') ? marked.parse(pre.text) : '<p>marked.js 加载失败,请检查网络连接</p>';
+  html = injectShortcodeBlocks(html, pre.blocks);
   rendered.innerHTML = html;
   applyInlineStyle(rendered);
   editWrap.style.display = 'none';
@@ -221,7 +345,6 @@ document.getElementById('btnRender').onclick = function () {
 };
 
 document.getElementById('btnCopy').onclick = function () {
-  // 克隆一份预览内容,拍平成微信编辑器认得的结构,放在屏幕外(不影响可见预览)
   var clone = rendered.cloneNode(true);
   flattenForWeChatPaste(clone);
 
@@ -247,7 +370,6 @@ document.getElementById('btnCopy').onclick = function () {
   document.body.removeChild(hiddenHost);
 };
 
-// 供原生代码调用:传入markdown文本并直接触发渲染
 function setMarkdownAndRender(text) {
   mdInput.value = text;
   document.getElementById('btnRender').click();
