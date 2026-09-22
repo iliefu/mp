@@ -34,6 +34,11 @@
 <div id="tip">提示:复制后切到"返回公众号编辑器",长按粘贴即可保留格式</div>
 <details id="shortcodeHelp">
   <summary>编辑部风格特殊模块语法(点开看用法)</summary>
+    <label style="display:flex;align-items:center;gap:6px;margin:8px 0;">
+      <input type="checkbox" id="autoFooterEnabled">
+      每篇自动追加文末引导条(不用每次手打 :::footer)
+    </label>
+    <input type="text" id="autoFooterText" style="width:100%;box-sizing:border-box;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;margin-bottom:8px;" placeholder="引导条文字,例如:☝关注｜点赞👍转发↗️在看❤️留言💬">
   <pre>:::note
 大标题文字
 摘要正文，**关键词**会变橙色加粗，==关键词==会带青色虚线下划线
@@ -78,6 +83,28 @@ var rendered = document.getElementById('rendered');
 var templateSelect = document.getElementById('templateSelect');
 var currentStyleMap = {};
 
+var autoFooterEnabled = document.getElementById('autoFooterEnabled');
+var autoFooterText = document.getElementById('autoFooterText');
+var DEFAULT_FOOTER_TEXT = '☝关注｜点赞👍转发↗️在看❤️留言💬';
+
+(function initAutoFooter() {
+  var savedEnabled = null;
+  var savedText = null;
+  try {
+    savedEnabled = localStorage.getItem('wemd_auto_footer_enabled');
+    savedText = localStorage.getItem('wemd_auto_footer_text');
+  } catch (e) {}
+  autoFooterEnabled.checked = savedEnabled === null ? true : savedEnabled === '1';
+  autoFooterText.value = savedText || DEFAULT_FOOTER_TEXT;
+
+  autoFooterEnabled.onchange = function () {
+    try { localStorage.setItem('wemd_auto_footer_enabled', autoFooterEnabled.checked ? '1' : '0'); } catch (e) {}
+  };
+  autoFooterText.oninput = function () {
+    try { localStorage.setItem('wemd_auto_footer_text', autoFooterText.value); } catch (e) {}
+  };
+})();
+  
 // 兜底样式:如果 templates/*.json 因为某些机型/环境原因加载失败,
 // 预览排版时至少还能用这套内置最简样式,不会完全没格式。
 var FALLBACK_STYLE_MAP = {
@@ -335,7 +362,12 @@ loadManifestAndTemplates();
 
 document.getElementById('btnRender').onclick = function () {
   var raw = mdInput.value || '';
+  if (autoFooterEnabled.checked && raw.indexOf(':::footer') === -1) {
+    var footerText = autoFooterText.value || DEFAULT_FOOTER_TEXT;
+    raw = raw.replace(/\s+$/, '') + '\n\n:::footer\n' + footerText + '\n:::\n';
+  }
   var pre = preprocessShortcodes(raw);
+
   var html = (typeof marked !== 'undefined') ? marked.parse(pre.text) : '<p>marked.js 加载失败,请检查网络连接</p>';
   html = injectShortcodeBlocks(html, pre.blocks);
   rendered.innerHTML = html;
